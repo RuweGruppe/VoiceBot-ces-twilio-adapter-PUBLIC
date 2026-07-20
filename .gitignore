@@ -25,3 +25,6 @@ wheels/
 
 # file with deployment values
 script/values.sh
+
+# local environment file with secrets
+.env

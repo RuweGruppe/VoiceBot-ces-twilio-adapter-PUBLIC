@@ -309,17 +309,24 @@ For faster development cycles, you can run the server locally and expose it to t
 2.  **Create `.env` file:** In the root of the repository, create a file named `.env`. This file will hold your local configuration and is loaded automatically by the application at startup.
 
 3.  **Configure `.env`:** Populate the `.env` file with the necessary values. You can use `script/values.sh` as a reference for most of them.
-    *   Get a fresh access token by running `gcloud auth print-access-token`.
+    *   Copy your **Twilio Account SID** and **Auth Token** from the Twilio Console (Account Info). Both are required — the app fails to start if either is unset.
     *   Use your `ngrok` hostname for `PUBLIC_SERVER_HOSTNAME`.
+    *   For agent authentication, the simplest local approach is Application Default Credentials: run `gcloud auth application-default login` and leave `AUTH_TOKEN_SECRET_PATH` unset. The app will mint and refresh the OAuth2 token automatically. (Alternatively, set `AUTH_TOKEN_SECRET_PATH` to a Secret Manager secret path — see "Method 2" above.)
 
     Your `.env` file should look like this:
 
     ```dotenv
+    # From the Twilio Console (Account Info)
+    TWILIO_ACCOUNT_SID="<your-twilio-account-sid>"
+    TWILIO_AUTH_TOKEN="<your-twilio-auth-token>"
+
     # From ngrok
     PUBLIC_SERVER_HOSTNAME="<your-ngrok-hostname>"
 
-    # From 'gcloud auth print-access-token'
-    AUTH_TOKEN="<your-gcloud-access-token>"
+    # Optional: only if using the Secret Manager override instead of ADC.
+    # The agent OAuth2 token is NOT read from a plain env var — it comes from
+    # ADC or from the secret at this path.
+    # AUTH_TOKEN_SECRET_PATH="projects/<your-gcp-project-id>/secrets/ces-twilio-adapter-token"
     ```
 
 4.  **Run the application:** In a separate terminal, run the application directly using Python.
