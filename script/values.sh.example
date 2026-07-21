@@ -19,10 +19,11 @@ SERVICE_NAME=ces-twilio-adapter
 SERVICE_ACCOUNT=ces-twilio-adapter@${PROJECT_ID}.iam.gserviceaccount.com
 TIMEOUT=60m
 CONCURRENCY=6
-LOCATION=us-central1
-PUBLIC_SERVER_HOSTNAME="ces-twilio-adapter-123456789012.us-central1.run.app"
+LOCATION=europe-west1
+PUBLIC_SERVER_HOSTNAME="ces-twilio-adapter-123456789012.europe-west1.run.app"
 TWILIO_ACCOUNT_SID="my-twilio-account-sid"
-TWILIO_AUTH_TOKEN_PATH="projects/123456789012/secrets/ces-twilio-auth-token"
+TWILIO_AUTH_TOKEN_PATH="ces-twilio-auth-token:latest"
+
 
 # PHONE NUMBER MAPPING CONFIGURATION (see "Phone Number to Agent Mapping" section in README.md)
 # Choose ONE of the following methods.
