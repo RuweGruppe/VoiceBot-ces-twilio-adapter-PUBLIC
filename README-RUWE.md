@@ -1,3 +1,70 @@
+> **README.md fix:** 
+The `gcloud secrets versions add` commands (e.g. adding the Twilio Auth Token) use `--data-from-file=-`, which is not a valid flag and errors with `unrecognized arguments`. Use `--data-file=-` instead.
+
+echo -n "YOUR_TWILIO_AUTH_TOKEN" | gcloud secrets versions add ces-twilio-auth-token --data-file=- --project=$(gcloud config get-value project)
+
+## Create ces-twilio-adapter service account and access secret
+
+```bash
+gcloud iam service-accounts create ces-twilio-adapter \
+  --project=voicebot-503007 \
+  --display-name="CES Twilio Adapter"
+
+Created service account [ces-twilio-adapter].
+Service account email: ces-twilio-adapter@voicebot-503007.iam.gserviceaccount.com
+
+gcloud secrets add-iam-policy-binding ces-twilio-auth-token \
+  --member="serviceAccount:$(bash -c 'source script/values.sh && echo $SERVICE_ACCOUNT')" \
+  --role="roles/secretmanager.secretAccessor" \
+  --project=$(gcloud config get-value project)
+
+Updated IAM policy for secret [ces-twilio-auth-token].
+bindings:
+- members:
+  - serviceAccount:ces-twilio-adapter@voicebot-503007.iam.gserviceaccount.com
+  role: roles/secretmanager.secretAccessor
+etag: BwZXGzvyYbA=
+version: 1
+
+Check if created:
+gcloud iam service-accounts list 
+DISPLAY NAME                     EMAIL                                                       DISABLED
+Default compute service account  738478701190-compute@developer.gserviceaccount.com          False
+CES Twilio Adapter               ces-twilio-adapter@voicebot-503007.iam.gserviceaccount.com  False
+
+Grant roles needed for source-based Cloud Run builds
+
+gcloud projects add-iam-policy-binding voicebot-503007 \
+  --member="serviceAccount:738478701190-compute@developer.gserviceaccount.com" \
+  --role="roles/storage.objectViewer"
+
+gcloud projects add-iam-policy-binding voicebot-503007 \
+  --member="serviceAccount:738478701190-compute@developer.gserviceaccount.com" \
+  --role="roles/cloudbuild.builds.builder"
+
+gcloud projects add-iam-policy-binding voicebot-503007 \
+  --member="serviceAccount:738478701190-compute@developer.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer"
+
+gcloud projects add-iam-policy-binding voicebot-503007 \
+  --member="serviceAccount:738478701190-compute@developer.gserviceaccount.com" \
+  --role="roles/logging.logWriter"
+
+```
+
+# gcp login
+
+```bash
+# gcloud auth login
+# after changing login email:
+gcloud auth list
+gcloud config list
+gcloud config set account <email>
+gcloud auth application-default login
+gcloud config set project voicebot-503007
+# gcloud auth application-default set-quota-project 
+```
+
 # CES Twilio Adapter — Configuration Notes
 
 Companion notes for [`script/values.sh`](script/values.sh) (the deploy-time config sourced by `script/deploy.sh`). The comments that used to live inline in `values.sh` have been moved here to keep that file minimal.
