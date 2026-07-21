@@ -426,7 +426,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         kickstart_message = {
                             "realtimeInput": {
                                 "event": {
-                                    "event": "session_start"
+                                    "event": "session start"
                                 }
                             }
                         }

@@ -50,6 +50,14 @@ gcloud projects add-iam-policy-binding voicebot-503007 \
   --member="serviceAccount:738478701190-compute@developer.gserviceaccount.com" \
   --role="roles/logging.logWriter"
 
+
+  Still ces.client role is missing for serviceaccount
+
+
+gcloud projects add-iam-policy-binding voicebot-503007 \
+  --member="serviceAccount:ces-twilio-adapter@voicebot-503007.iam.gserviceaccount.com" \
+  --role="roles/ces.client"
+
 ```
 
 # gcp login
