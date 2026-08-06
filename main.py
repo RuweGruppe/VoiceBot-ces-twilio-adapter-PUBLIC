@@ -18,6 +18,7 @@ import base64
 import json
 import logging
 import os
+import random
 import uuid
 
 import google.auth
@@ -186,6 +187,21 @@ async def handle_incoming_call(request: Request):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="'To' parameter is missing."
         )
+    caller_number = form_params.get("From")
+
+    # Custom data injected by an upstream SIP trunk (e.g. 3CX) as an "X-"
+    # SIP header on the INVITE it sends to Twilio. Twilio surfaces these as
+    # webhook params, but the exact key naming isn't 100% consistent across
+    # Twilio's docs, so we log everything and try a couple of candidates.
+    # Once you confirm the real key from the logs below, trim this to just
+    # that one key.
+    logger.info(f"Incoming call form params: {dict(form_params)}")
+    customer_id = (
+        form_params.get("SipHeader_X-CustomerID")
+        or form_params.get("SipHeader_CustomerID")
+    )
+    if customer_id:
+        logger.info(f"Found customer_id from SIP header: {customer_id}")
 
     try:
         agent_config = await get_agent_for_phone_number_async(to_number)
@@ -237,12 +253,20 @@ async def handle_incoming_call(request: Request):
 
     logger.info(f"Generated session ID for call from {to_number}: {session_id}")
 
+    # TODO(temporary): test_id is for testing only, remove once no longer needed.
+    test_id = str(random.randint(1000, 9999))
+
     response = VoiceResponse()
     connect = Connect()
     stream = connect.stream(url=f"wss://{PUBLIC_SERVER_HOSTNAME}/media-stream")
     stream.parameter(name="session_id", value=session_id)
     if deployment_id:
         stream.parameter(name="deployment_id", value=deployment_id)
+    if caller_number:
+        stream.parameter(name="caller_number", value=caller_number)
+    if customer_id:
+        stream.parameter(name="customer_id", value=customer_id)
+    stream.parameter(name="test_id", value=test_id)
     stream.parameter(name="virtual_agent_endpoint", value=virtual_agent_endpoint)
     response.append(connect)
 
@@ -342,6 +366,7 @@ async def websocket_endpoint(websocket: WebSocket):
             nonlocal session_id
             nonlocal project_id
             nonlocal va_ws
+            dtmf_buffer = ""
             while True:
                 message = await websocket.receive_text()
                 data = json.loads(message)
@@ -360,6 +385,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         virtual_agent_url = data["start"]["customParameters"].get(
                             "virtual_agent_endpoint"
                         )
+                        caller_number = data["start"]["customParameters"].get(
+                            "caller_number"
+                        )
+                        customer_id = data["start"]["customParameters"].get(
+                            "customer_id"
+                        )
+                        test_id = data["start"]["customParameters"].get("test_id")
                         project_id = get_project_id_from_session_id(session_id)
                         logger.info(
                             f"Twilio Start. Stream SID: {stream_sid}, Call SID: "
@@ -422,6 +454,27 @@ async def websocket_endpoint(websocket: WebSocket):
                             # Re-raise to let the main loop handle connection closing
                             raise
 
+                        # Send caller metadata as session variables, if available.
+                        # Requires matching variables (e.g. "caller_number",
+                        # "customer_id") to be declared on the agent in CX Agent
+                        # Studio to be usable there.
+                        call_variables = {}
+                        if caller_number:
+                            call_variables["caller_number"] = caller_number
+                        if customer_id:
+                            call_variables["customer_id"] = customer_id
+                        if test_id:
+                            call_variables["test_id"] = test_id
+                        if call_variables:
+                            variables_message = {
+                                "realtimeInput": {"variables": call_variables}
+                            }
+                            logger.info(
+                                f"Sending caller variables to virtual agent: "
+                                f"{variables_message}"
+                            )
+                            await va_ws.send(json.dumps(variables_message))
+
                         # Send initial welcome event (aligned with ces-genesys-adapter)
                         kickstart_message = {
                             "realtimeInput": {
@@ -479,6 +532,21 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif event_type == "dtmf":
                     digit = data["dtmf"]["digit"]
                     logger.info(f"Received DTMF digit: {digit}")
+                    if digit == "#":
+                        if dtmf_buffer and va_ws:
+                            variables_message = {
+                                "realtimeInput": {
+                                    "variables": {"customer_id": dtmf_buffer}
+                                }
+                            }
+                            logger.info(
+                                f"Sending DTMF-derived customer_id to virtual agent: "
+                                f"{variables_message}"
+                            )
+                            await va_ws.send(json.dumps(variables_message))
+                        dtmf_buffer = ""
+                    else:
+                        dtmf_buffer += digit
 
                 else:
                     logger.warning(
