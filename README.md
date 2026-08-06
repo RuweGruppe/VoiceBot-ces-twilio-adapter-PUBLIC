@@ -248,6 +248,15 @@ Before the first deployment, you must manually grant the service account the nec
 
 ### 6. Deploy the Service
 
+# gcloud auth login
+# after changing login email:
+gcloud auth list
+gcloud config list
+gcloud config set account <email>
+gcloud auth application-default login
+gcloud config set project voicebot-503007
+gcloud auth application-default set-quota-project voicebot-503007
+
 Run the deployment script:
 
 ```bash
