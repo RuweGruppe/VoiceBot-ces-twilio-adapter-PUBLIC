@@ -254,7 +254,7 @@ async def handle_incoming_call(request: Request):
     logger.info(f"Generated session ID for call from {to_number}: {session_id}")
 
     # TODO(temporary): test_id is for testing only, remove once no longer needed.
-    test_id = str(random.randint(1000, 9999))
+    test_id = str(random.randint(10, 99))
 
     response = VoiceResponse()
     connect = Connect()
