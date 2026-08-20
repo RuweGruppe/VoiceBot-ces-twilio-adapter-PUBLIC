@@ -255,7 +255,7 @@ async def handle_incoming_call(request: Request):
 
     logger.info(f"Generated session ID for call from {to_number}: {session_id}")
 
-    # TODO(temporary): WinterhotlineCallId is for testing only, remove once no longer needed.
+    # TODO(temporary): winterhotlineCallId is for testing only, remove once no longer needed.
     winterhotline_call_id = str(next(_winterhotline_call_id_counter))
 
     response = VoiceResponse()
@@ -268,7 +268,7 @@ async def handle_incoming_call(request: Request):
         stream.parameter(name="caller_number", value=caller_number)
     if customer_id:
         stream.parameter(name="customer_id", value=customer_id)
-    stream.parameter(name="WinterhotlineCallId", value=winterhotline_call_id)
+    stream.parameter(name="winterhotlineCallId", value=winterhotline_call_id)
     stream.parameter(name="virtual_agent_endpoint", value=virtual_agent_endpoint)
     response.append(connect)
 
@@ -393,7 +393,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         customer_id = data["start"]["customParameters"].get(
                             "customer_id"
                         )
-                        winterhotline_call_id = data["start"]["customParameters"].get("WinterhotlineCallId")
+                        winterhotline_call_id = data["start"]["customParameters"].get("winterhotlineCallId")
                         project_id = get_project_id_from_session_id(session_id)
                         logger.info(
                             f"Twilio Start. Stream SID: {stream_sid}, Call SID: "
@@ -466,7 +466,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         if customer_id:
                             call_variables["customer_id"] = customer_id
                         if winterhotline_call_id:
-                            call_variables["WinterhotlineCallId"] = winterhotline_call_id
+                            call_variables["winterhotlineCallId"] = winterhotline_call_id
                         if call_variables:
                             variables_message = {
                                 "realtimeInput": {"variables": call_variables}
