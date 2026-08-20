@@ -40,7 +40,7 @@ Before deploying, you must customize the configuration values in `script/values.
 
 # MUST BE EDITED
 PROJECT_ID="your-gcp-project-id"
-LOCATION="us-central1"
+LOCATION="europe-west1"
 
 # USUALLY EDITED AFTER FIRST DEPLOYMENT
 PUBLIC_SERVER_HOSTNAME="ces-twilio-adapter-xxxx.a.run.app" # e.g. ces-twilio-adapter-abcdef-uc.a.run.app
