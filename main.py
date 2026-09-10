@@ -16,7 +16,7 @@ import asyncio
 import audioop
 import base64
 import json
-import itertools
+
 import logging
 import os
 import uuid
@@ -51,7 +51,7 @@ from twilio_utils import validate_twilio_signature
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-_winterhotline_call_id_counter = itertools.count(1)
+BASE_PHONE_NUMBER = os.getenv("BASE_PHONE_NUMBER", "+493042430003")
 
 # Load environment variables from .env file
 load_dotenv()
@@ -183,20 +183,22 @@ async def handle_incoming_call(request: Request):
             status_code=status.HTTP_403_FORBIDDEN, detail="Invalid signature"
         )
 
-    to_number = form_params.get("To")
-    if not to_number:
+    raw_to_number = form_params.get("To")
+    if not raw_to_number:
         logger.error("'To' phone number not found in Twilio request.")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="'To' parameter is missing."
         )
     caller_number = form_params.get("From")
 
-    # Custom data injected by an upstream SIP trunk (e.g. 3CX) as an "X-"
-    # SIP header on the INVITE it sends to Twilio. Twilio surfaces these as
-    # webhook params, but the exact key naming isn't 100% consistent across
-    # Twilio's docs, so we log everything and try a couple of candidates.
-    # Once you confirm the real key from the logs below, trim this to just
-    # that one key.
+    winterhotline_call_id = None
+    if raw_to_number.startswith(BASE_PHONE_NUMBER) and len(raw_to_number) > len(BASE_PHONE_NUMBER):
+        winterhotline_call_id = raw_to_number[len(BASE_PHONE_NUMBER):]
+        to_number = BASE_PHONE_NUMBER
+        logger.info(f"Extracted winterhotlineCallId={winterhotline_call_id} from To={raw_to_number}")
+    else:
+        to_number = raw_to_number
+
     logger.info(f"Incoming call form params: {dict(form_params)}")
     customer_id = (
         form_params.get("SipHeader_X-CustomerID")
@@ -253,10 +255,7 @@ async def handle_incoming_call(request: Request):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )
 
-    logger.info(f"Generated session ID for call from {to_number}: {session_id}, caller: {caller_number}")
-
-    # TODO(temporary): winterhotlineCallId is for testing only, remove once no longer needed.
-    winterhotline_call_id = str(next(_winterhotline_call_id_counter))
+    logger.info(f"Generated session ID for call from {to_number}: {session_id}, caller: {caller_number}, winterhotlineCallId: {winterhotline_call_id}")
 
     response = VoiceResponse()
     connect = Connect()
