@@ -253,7 +253,7 @@ async def handle_incoming_call(request: Request):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )
 
-    logger.info(f"Generated session ID for call from {to_number}: {session_id}")
+    logger.info(f"Generated session ID for call from {to_number}: {session_id}, caller: {caller_number}")
 
     # TODO(temporary): winterhotlineCallId is for testing only, remove once no longer needed.
     winterhotline_call_id = str(next(_winterhotline_call_id_counter))
@@ -456,10 +456,6 @@ async def websocket_endpoint(websocket: WebSocket):
                             # Re-raise to let the main loop handle connection closing
                             raise
 
-                        # Send caller metadata as session variables, if available.
-                        # Requires matching variables (e.g. "caller_number",
-                        # "customer_id") to be declared on the agent in CX Agent
-                        # Studio to be usable there.
                         call_variables = {}
                         if caller_number:
                             call_variables["caller_number"] = caller_number
