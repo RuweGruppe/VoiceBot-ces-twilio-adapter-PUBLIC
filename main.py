@@ -51,8 +51,6 @@ from twilio_utils import validate_twilio_signature
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BASE_PHONE_NUMBER = os.getenv("BASE_PHONE_NUMBER", "+493042430003")
-
 # Load environment variables from .env file
 load_dotenv()
 
@@ -183,23 +181,28 @@ async def handle_incoming_call(request: Request):
             status_code=status.HTTP_403_FORBIDDEN, detail="Invalid signature"
         )
 
-    raw_to_number = form_params.get("To")
-    if not raw_to_number:
+    raw_to = form_params.get("To")
+    if not raw_to:
         logger.error("'To' phone number not found in Twilio request.")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="'To' parameter is missing."
         )
     caller_number = form_params.get("From")
 
-    winterhotline_call_id = None
-    if raw_to_number.startswith(BASE_PHONE_NUMBER) and len(raw_to_number) > len(BASE_PHONE_NUMBER):
-        winterhotline_call_id = raw_to_number[len(BASE_PHONE_NUMBER):]
-        to_number = BASE_PHONE_NUMBER
-        logger.info(f"Extracted winterhotlineCallId={winterhotline_call_id} from To={raw_to_number}")
+    if raw_to.startswith("sip:"):
+        to_number = raw_to.split("@")[0].replace("sip:", "")
     else:
-        to_number = raw_to_number
+        to_number = raw_to
 
     logger.info(f"Incoming call form params: {dict(form_params)}")
+
+    winterhotline_call_id = (
+        form_params.get("SipHeader_X-WinterhotlineCallId")
+        or form_params.get("SipHeader_X-winterhotlinecallid")
+    )
+    if winterhotline_call_id:
+        logger.info(f"Found winterhotlineCallId from SIP header: {winterhotline_call_id}")
+
     customer_id = (
         form_params.get("SipHeader_X-CustomerID")
         or form_params.get("SipHeader_CustomerID")
