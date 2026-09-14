@@ -203,6 +203,12 @@ async def handle_incoming_call(request: Request):
     if winterhotline_call_id:
         logger.info(f"Found winterhotlineCallId from SIP header: {winterhotline_call_id}")
 
+    BASE_PHONE_NUMBER = "+493042430003"
+    if not winterhotline_call_id and to_number.startswith(BASE_PHONE_NUMBER) and len(to_number) > len(BASE_PHONE_NUMBER):
+        winterhotline_call_id = str(int(to_number[len(BASE_PHONE_NUMBER):]))
+        to_number = BASE_PHONE_NUMBER
+        logger.info(f"Parsed winterhotlineCallId={winterhotline_call_id} from To number")
+
     customer_id = (
         form_params.get("SipHeader_X-CustomerID")
         or form_params.get("SipHeader_CustomerID")
