@@ -25,6 +25,7 @@ wheels/
 
 # file with deployment values
 script/values.sh
+script/values_staging.sh
 
 # local environment file with secrets
 .env
