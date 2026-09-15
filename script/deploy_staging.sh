@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-source $(dirname "$0")/values.sh
+source $(dirname "$0")/values_staging.sh
 
 gcloud run deploy $SERVICE_NAME \
     --source="." \
