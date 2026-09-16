@@ -1,3 +1,30 @@
+# Credential files not checked in
+Find them on:
+
+.../Dokumente/EDV/entwicklung/VoiceBot/other/GCP-CES-adapter-credentials-production-staging
+
+## Deploy the Service
+
+```bash
+# gcloud auth login
+# after changing login email:
+gcloud auth list
+gcloud config list
+gcloud config set account <email>
+gcloud auth application-default login
+gcloud config set project voicebot-503007
+gcloud auth application-default set-quota-project voicebot-503007
+
+Run the deployment script for production:
+bash script/deploy.sh
+
+or staging
+bash script/deploy_staging.sh
+```
+
+This command will build the container image from the source, push it to Artifact Registry, and deploy it to Cloud Run.
+
+
 # CES Twilio Adapter
 
 This repository contains a telephony adapter to connect Twilio with Google Cloud's conversational AI agents. It acts as a bridge for both voice and messaging, supporting voice calls, SMS, and Rich Communication Services (RCS). The adapter receives incoming requests from Twilio, dynamically routes them to the correct AI agent based on the phone number or sender ID, and facilitates the conversation between the user and the agent.
@@ -246,26 +273,7 @@ Before the first deployment, you must manually grant the service account the nec
         --project=$(gcloud config get-value project)
     ```
 
-### 6. Deploy the Service
-
-# gcloud auth login
-# after changing login email:
-gcloud auth list
-gcloud config list
-gcloud config set account <email>
-gcloud auth application-default login
-gcloud config set project voicebot-503007
-gcloud auth application-default set-quota-project voicebot-503007
-
-Run the deployment script:
-
-```bash
-bash script/deploy.sh
-```
-
-This command will build the container image from the source, push it to Artifact Registry, and deploy it to Cloud Run.
-
-### 7. Final Configuration
+### 6. Final Configuration
 
 1.  **Update Service Hostname:** After the first deployment, Cloud Run will assign a public URL to your service. Copy this URL.
     *   Open `script/values.sh` and update the `PUBLIC_SERVER_HOSTNAME` variable with your service's hostname (e.g., `ces-twilio-adapter-xxxx.a.run.app`).
@@ -291,7 +299,7 @@ This command will build the container image from the source, push it to Artifact
 
 Your adapter is now live.
 
-## Local Development & Testing
+## Local Development & Testing, not verified (untested)
 
 For faster development cycles, you can run the server locally and expose it to the internet using `ngrok`. This is easy to do from a local machine or a Cloud Shell instance.
 

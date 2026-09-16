@@ -16,7 +16,6 @@ import asyncio
 import audioop
 import base64
 import json
-
 import logging
 import os
 import uuid
@@ -50,6 +49,8 @@ from twilio_utils import validate_twilio_signature
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+BASE_PHONE_NUMBER = os.getenv("BASE_PHONE_NUMBER", "+493042430003")
 
 # Load environment variables from .env file
 load_dotenv()
@@ -196,25 +197,14 @@ async def handle_incoming_call(request: Request):
 
     logger.info(f"Incoming call form params: {dict(form_params)}")
 
-    winterhotline_call_id = (
-        form_params.get("SipHeader_X-WinterhotlineCallId")
-        or form_params.get("SipHeader_X-winterhotlinecallid")
-    )
-    if winterhotline_call_id:
-        logger.info(f"Found winterhotlineCallId from SIP header: {winterhotline_call_id}")
-
-    BASE_PHONE_NUMBER = "+493042430003"
-    if not winterhotline_call_id and to_number.startswith(BASE_PHONE_NUMBER) and len(to_number) > len(BASE_PHONE_NUMBER):
-        winterhotline_call_id = str(int(to_number[len(BASE_PHONE_NUMBER):]))
+    winterhotline_call_id = "-1"
+    suffix = to_number[len(BASE_PHONE_NUMBER):] if to_number.startswith(BASE_PHONE_NUMBER) else ""
+    if suffix.isdigit():
+        winterhotline_call_id = str(int(suffix))
         to_number = BASE_PHONE_NUMBER
         logger.info(f"Parsed winterhotlineCallId={winterhotline_call_id} from To number")
-
-    customer_id = (
-        form_params.get("SipHeader_X-CustomerID")
-        or form_params.get("SipHeader_CustomerID")
-    )
-    if customer_id:
-        logger.info(f"Found customer_id from SIP header: {customer_id}")
+    else:
+        logger.info(f"No winterhotlineCallId in To number {to_number}, using default -1")
 
     try:
         agent_config = await get_agent_for_phone_number_async(to_number)
@@ -274,8 +264,6 @@ async def handle_incoming_call(request: Request):
         stream.parameter(name="deployment_id", value=deployment_id)
     if caller_number:
         stream.parameter(name="caller_number", value=caller_number)
-    if customer_id:
-        stream.parameter(name="customer_id", value=customer_id)
     stream.parameter(name="winterhotlineCallId", value=winterhotline_call_id)
     stream.parameter(name="virtual_agent_endpoint", value=virtual_agent_endpoint)
     response.append(connect)
@@ -376,7 +364,6 @@ async def websocket_endpoint(websocket: WebSocket):
             nonlocal session_id
             nonlocal project_id
             nonlocal va_ws
-            dtmf_buffer = ""
             while True:
                 message = await websocket.receive_text()
                 data = json.loads(message)
@@ -398,10 +385,9 @@ async def websocket_endpoint(websocket: WebSocket):
                         caller_number = data["start"]["customParameters"].get(
                             "caller_number"
                         )
-                        customer_id = data["start"]["customParameters"].get(
-                            "customer_id"
+                        winterhotline_call_id = data["start"]["customParameters"].get(
+                            "winterhotlineCallId", "-1"
                         )
-                        winterhotline_call_id = data["start"]["customParameters"].get("winterhotlineCallId")
                         project_id = get_project_id_from_session_id(session_id)
                         logger.info(
                             f"Twilio Start. Stream SID: {stream_sid}, Call SID: "
@@ -467,19 +453,15 @@ async def websocket_endpoint(websocket: WebSocket):
                         call_variables = {}
                         if caller_number:
                             call_variables["caller_number"] = caller_number
-                        if customer_id:
-                            call_variables["customer_id"] = customer_id
-                        if winterhotline_call_id:
-                            call_variables["winterhotlineCallId"] = winterhotline_call_id
-                        if call_variables:
-                            variables_message = {
-                                "realtimeInput": {"variables": call_variables}
-                            }
-                            logger.info(
-                                f"Sending caller variables to virtual agent: "
-                                f"{variables_message}"
-                            )
-                            await va_ws.send(json.dumps(variables_message))
+                        call_variables["winterhotlineCallId"] = winterhotline_call_id
+                        variables_message = {
+                            "realtimeInput": {"variables": call_variables}
+                        }
+                        logger.info(
+                            f"Sending caller variables to virtual agent: "
+                            f"{variables_message}"
+                        )
+                        await va_ws.send(json.dumps(variables_message))
 
                         # Send initial welcome event (aligned with ces-genesys-adapter)
                         kickstart_message = {
@@ -534,25 +516,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 elif event_type == "mark":
                     logger.info(f"Twilio Mark message: {data}")
-
-                elif event_type == "dtmf":
-                    digit = data["dtmf"]["digit"]
-                    logger.info(f"Received DTMF digit: {digit}")
-                    if digit == "#":
-                        if dtmf_buffer and va_ws:
-                            variables_message = {
-                                "realtimeInput": {
-                                    "variables": {"customer_id": dtmf_buffer}
-                                }
-                            }
-                            logger.info(
-                                f"Sending DTMF-derived customer_id to virtual agent: "
-                                f"{variables_message}"
-                            )
-                            await va_ws.send(json.dumps(variables_message))
-                        dtmf_buffer = ""
-                    else:
-                        dtmf_buffer += digit
 
                 else:
                     logger.warning(

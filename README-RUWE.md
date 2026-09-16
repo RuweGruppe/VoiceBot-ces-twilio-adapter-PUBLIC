@@ -161,49 +161,21 @@ Undeclared variable names still get passed through to the underlying Dialogflow 
 
 **Implemented: caller number.** `From` is captured in `/incoming-call`, threaded through as a TwiML `<Stream>` `<Parameter name="caller_number">`, picked up from `customParameters` in the websocket `start` event, and sent to the agent as `realtimeInput.variables.caller_number` right after the config message. To use it, declare a `caller_number` variable on the agent in CX Agent Studio and reference `{caller_number}` in its Instructions. Other Twilio call fields (e.g. `CallSid`) aren't forwarded yet — same pattern applies if needed.
 
-### `customer_id` via DTMF (pipeline: 3CX → plain call forwarding → Twilio → this adapter → CES agent)
+### `winterhotlineCallId` via the dialed number (pipeline: 3CX → plain call forwarding → Twilio → this adapter → CES agent)
 
-Our pipeline: a customer types a number into the call on the **3CX** side, 3CX **forwards the call to a single Twilio number** (plain outbound dial — no SIP trunk/peering between 3CX and Twilio, no Origination/Termination setup). Twilio just receives it as a normal inbound call and hits this adapter's `/incoming-call` webhook.
+Our pipeline: 3CX **forwards the call to a Twilio number** (plain outbound dial — no SIP trunk/peering between 3CX and Twilio, no Origination/Termination setup). Twilio receives it as a normal inbound call and hits this adapter's `/incoming-call` webhook.
 
-Because there's no SIP peering relationship, **custom SIP headers don't work here** — that requires Twilio to be able to read the INVITE 3CX sends it, which only happens with real SIP trunking (and even then, only Elastic SIP Trunking origination, not BYOC). Plain call forwarding gives Twilio nothing but a standard inbound call: `To`, `From`, `CallSid`, and audio. (The earlier `SipHeader_X-CustomerID` lookup added to `handle_incoming_call` is effectively dead code for this setup — harmless to leave, since it just won't match anything, but it won't work here.)
+Because there's no SIP peering relationship, **custom SIP headers don't work here** — that requires Twilio to be able to read the INVITE 3CX sends it, which only happens with real SIP trunking (and even then, only Elastic SIP Trunking origination, not BYOC). Plain call forwarding gives Twilio nothing but a standard inbound call: `To`, `From`, `CallSid`, and audio.
 
-The one channel that *does* survive plain forwarding: **DTMF tones**, since Twilio decodes them in-band from the call audio (RFC 2833 RTP events) — this works on any call reaching Twilio regardless of how it got there.
+The channel that *does* survive plain forwarding: **the dialed number itself**. 3CX appends the ID to the base number, so the `To` field carries it.
 
-**Implemented (adapter side):** `main.py`'s `dtmf` event handler now accumulates digits into a buffer and, on receiving `#` as a terminator, sends the assembled string to the agent as `realtimeInput.variables.customer_id` — reusing the same variables-delivery path as `caller_number`.
+**Implemented (adapter side):** `handle_incoming_call` strips the `BASE_PHONE_NUMBER` prefix off `To` and treats the remaining digits as the ID, defaulting to `-1` when there's no numeric suffix. From there it's threaded through the same pipeline as `caller_number`: TwiML `<Parameter name="winterhotlineCallId">` → websocket `customParameters` → `realtimeInput.variables.winterhotlineCallId`.
 
-**Still needed (3CX side):** configure the outbound/forwarding rule to a Twilio number so that, once the call connects, 3CX **automatically sends DTMF digits** representing the customer number, followed by `#` (e.g. `<twilio-number>,,,<customer-id>#` — comma = pause, syntax varies; see 3CX's forum thread ["Call forwarding to external number with additional DTMF tone"](https://www.3cx.com/community/threads/call-forwarding-to-external-number-with-additional-dtf-tone.135116/) and 3CX's own DTMF/Speed Dial docs). This isn't a guaranteed one-click 3CX feature — needs testing.
+**Also needed (CX Agent Studio):** declare a `winterhotlineCallId` variable and reference `{winterhotlineCallId}` in the agent's Instructions.
 
-**Also still needed (CX Agent Studio):** declare a `customer_id` variable and reference `{customer_id}` in the agent's Instructions.
+The value is available **before** the kickstart event is sent, so it's usable from the agent's very first greeting turn.
 
-**Timing caveat:** DTMF only arrives after the media stream starts, which is *after* the adapter has already sent the `session start` kickstart event. So `customer_id` may not be available for the agent's very first greeting turn — it'll be there for every turn after that. If the greeting itself needs to use it, the kickstart event would need to wait briefly for DTMF first; not implemented yet since it adds real complexity (buffering/timeout logic) — worth doing only if testing shows it's actually needed.
-
-### Alternative: `customer_id` via SIP header (if 3CX ever connects as a real Twilio SIP trunk)
-
-The DTMF approach above is for **plain call forwarding** (3CX just dials a Twilio number, no SIP peering). If the setup ever changes to a real **Twilio Elastic SIP Trunk** with 3CX as the Origination source — i.e. 3CX is configured with a SIP trunk pointing at Twilio's SIP domain (`*.pstn.twilio.com`), rather than just dialing a phone number — a cleaner, instant (no post-connect delay) mechanism becomes available: **custom SIP headers**.
-
-**How it works:** Twilio reads any header on the inbound SIP INVITE that's named `X-<Something>` and surfaces it as a webhook request parameter prefixed `SipHeader_`, e.g. a header `X-CustomerID: 12345` sent by 3CX arrives at `/incoming-call` as a form param — Twilio's own docs aren't fully consistent on whether the `X-` survives in the param name, so it could come through as either `SipHeader_X-CustomerID` or `SipHeader_CustomerID`. This **only works for standard Elastic SIP Trunking origination** — Twilio explicitly does not forward custom headers for BYOC (Bring Your Own Carrier) trunks.
-
-**3CX side:** in the outbound trunk rule/SIP header template for the trunk pointing at Twilio, add a custom header (e.g. `X-CustomerID`) populated from whatever 3CX variable holds the customer number (3CX already supports this kind of header templating — see its own docs on `$OriginatorCallerID`-style SIP header templates for the equivalent caller-ID-passthrough case).
-
-**Adapter side:** `main.py`'s `handle_incoming_call` already has this wired up (from before the plain-forwarding clarification) — it logs the full incoming form params and tries `SipHeader_X-CustomerID` / `SipHeader_CustomerID` as candidates:
-
-```python
-logger.info(f"Incoming call form params: {dict(form_params)}")
-customer_id = (
-    form_params.get("SipHeader_X-CustomerID")
-    or form_params.get("SipHeader_CustomerID")
-)
-```
-
-From there it's threaded through the same pipeline as `caller_number`: TwiML `<Parameter name="customer_id">` → websocket `customParameters` → `realtimeInput.variables.customer_id`. Right now, with plain forwarding, this lookup just never matches (harmless no-op). If the trunk setup changes:
-1. Configure the `X-CustomerID` header on the 3CX trunk rule.
-2. Place a test call and check Cloud Run logs for the `Incoming call form params:` line to find the *actual* key Twilio used.
-3. If it's neither candidate, update the `customer_id = form_params.get(...)` lookup to match.
-4. Declare a `customer_id` variable on the agent in CX Agent Studio and reference `{customer_id}` in its Instructions (same as the DTMF path).
-
-Unlike DTMF, this data is available **before** the kickstart event is sent, so it doesn't have the "missing from the first greeting" timing gap.
-
-Sources: [SessionInput (PHP client reference)](https://docs.cloud.google.com/php/docs/reference/cloud-ces/latest/V1.SessionInput), [BidiSessionClientMessage (PHP client reference)](https://docs.cloud.google.com/php/docs/reference/cloud-ces/latest/V1.BidiSessionClientMessage), [Variables | CX Agent Studio](https://docs.cloud.google.com/gemini-enterprise-cx/cx-agent-studio/variable), [Inbound - Sending SIP to Twilio](https://www.twilio.com/docs/voice/api/sending-sip).
+Sources: [SessionInput (PHP client reference)](https://docs.cloud.google.com/php/docs/reference/cloud-ces/latest/V1.SessionInput), [BidiSessionClientMessage (PHP client reference)](https://docs.cloud.google.com/php/docs/reference/cloud-ces/latest/V1.BidiSessionClientMessage), [Variables | CX Agent Studio](https://docs.cloud.google.com/gemini-enterprise-cx/cx-agent-studio/variable).
 
 ---
 
@@ -975,28 +947,27 @@ it shows up in the main iam list, that is great
 ---
 ### Flow diagram prompt:
 
-Technical architecture diagram, left-to-right flow, clean boxes and labeled arrows, two distinct arrow colors — one for voice/audio, one for metadata/SIP-header data. Style: clean technical/network diagram, white background, rounded rectangles for systems, small icons optional.
+Technical architecture diagram, left-to-right flow, clean boxes and labeled arrows, two distinct arrow colors — one for voice/audio, one for metadata. Style: clean technical/network diagram, white background, rounded rectangles for systems, small icons optional.
 
 Nodes (left to right):
 
 Caller (phone icon) — customer on a regular phone call
-3CX PBX — receives the call, customer types a number (customer ID) into the call
-Twilio Elastic SIP Trunk (Origination) — SIP trunk connection between 3CX and Twilio
-Twilio (cloud icon, labeled "Twilio Voice") — receives the SIP INVITE, triggers webhook
+3CX PBX — receives the call, forwards it to the Twilio number with the winterhotlineCallId appended to the dialed digits
+Twilio (cloud icon, labeled "Twilio Voice") — receives the forwarded call, triggers webhook
 ces-twilio-adapter (Cloud Run box) — this repo's service, two sub-labels: /incoming-call (HTTP webhook) and /media-stream (WebSocket)
 GCP CES Agent (Google Cloud icon, labeled "CX Agent Studio / Gemini") — the conversational AI agent
-Pub/Sub (Google Cloud icon, labeled "Cloud Pub/Sub topic") — new, rightmost node
+Pub/Sub (Google Cloud icon, labeled "Cloud Pub/Sub topic") — rightmost node
 Arrows / flow steps:
 
 Caller → 3CX: phone call arrives (audio, solid black arrow)
-3CX → Twilio SIP Trunk: SIP INVITE, carrying custom header X-CustomerID: <id> (metadata arrow, distinct color e.g. blue, dashed, labeled "SIP INVITE + X-CustomerID header")
-Twilio → ces-twilio-adapter /incoming-call: HTTP POST webhook, SipHeader_X-CustomerID form param (blue arrow, labeled "webhook POST + SipHeader_X-CustomerID")
-ces-twilio-adapter /incoming-call → Twilio: TwiML response with <Connect><Stream> + <Parameter name="customer_id"> (blue arrow back to Twilio, labeled "TwiML + customer_id Parameter")
-Twilio → ces-twilio-adapter /media-stream: WebSocket opens, start event with customParameters.customer_id (blue arrow, labeled "WS start event + customParameters")
+3CX → Twilio: plain call forwarding to +49304243000<id> (metadata arrow, distinct color e.g. blue, dashed, labeled "forwarded call, ID appended to dialed number")
+Twilio → ces-twilio-adapter /incoming-call: HTTP POST webhook, To form param carrying the appended ID (blue arrow, labeled "webhook POST + To number")
+ces-twilio-adapter /incoming-call → Twilio: TwiML response with <Connect><Stream> + <Parameter name="winterhotlineCallId"> (blue arrow back to Twilio, labeled "TwiML + winterhotlineCallId Parameter")
+Twilio → ces-twilio-adapter /media-stream: WebSocket opens, start event with customParameters.winterhotlineCallId (blue arrow, labeled "WS start event + customParameters")
 Caller ↔ Twilio ↔ ces-twilio-adapter /media-stream: bidirectional audio streaming (black arrows, both directions, labeled "audio (mulaw 8kHz)")
-ces-twilio-adapter /media-stream → GCP CES Agent: WebSocket (BidiRunSession), realtimeInput.variables.customer_id (blue arrow, labeled "realtimeInput.variables.customer_id")
+ces-twilio-adapter /media-stream → GCP CES Agent: WebSocket (BidiRunSession), realtimeInput.variables.winterhotlineCallId (blue arrow, labeled "realtimeInput.variables.winterhotlineCallId")
 ces-twilio-adapter ↔ GCP CES Agent: bidirectional audio streaming, resampled 16kHz LINEAR16 (black arrows, both directions, labeled "audio (LINEAR16 16kHz)")
-GCP CES Agent → Pub/Sub: agent publishes customer_id (plus any other session metadata) to a Cloud Pub/Sub topic (blue arrow, labeled "publish customer_id + session metadata", dashed to indicate this happens agent-side, not in the adapter)
-Callout box 1: "Metadata path (blue): customer_id travels from 3CX's SIP header → Twilio webhook param → TwiML parameter → WebSocket customParameters → CES session variable — declared in CX Agent Studio and referenced as {customer_id} in the agent's Instructions."
+GCP CES Agent → Pub/Sub: agent publishes winterhotlineCallId (plus any other session metadata) to a Cloud Pub/Sub topic (blue arrow, labeled "publish winterhotlineCallId + session metadata", dashed to indicate this happens agent-side, not in the adapter)
+Callout box 1: "Metadata path (blue): winterhotlineCallId travels from the digits 3CX appends to the dialed number → Twilio webhook To param → TwiML parameter → WebSocket customParameters → CES session variable — declared in CX Agent Studio and referenced as {winterhotlineCallId} in the agent's Instructions. Defaults to -1 when the dialed number carries no ID."
 
-Callout box 2: "Downstream: the CES agent forwards customer_id (and related session metadata) onward by publishing to a Cloud Pub/Sub topic — this step happens inside the agent (e.g. a CES tool), not in the ces-twilio-adapter service."
+Callout box 2: "Downstream: the CES agent forwards winterhotlineCallId (and related session metadata) onward by publishing to a Cloud Pub/Sub topic — this step happens inside the agent (e.g. a CES tool), not in the ces-twilio-adapter service."
