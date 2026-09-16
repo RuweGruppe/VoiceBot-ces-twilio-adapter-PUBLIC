@@ -1,7 +1,28 @@
-> **README.md fix:** 
-The `gcloud secrets versions add` commands (e.g. adding the Twilio Auth Token) use `--data-from-file=-`, which is not a valid flag and errors with `unrecognized arguments`. Use `--data-file=-` instead.
+# Credential files not checked in
+Find them on:
 
-echo -n "YOUR_TWILIO_AUTH_TOKEN" | gcloud secrets versions add ces-twilio-auth-token --data-file=- --project=$(gcloud config get-value project)
+.../Dokumente/EDV/entwicklung/VoiceBot/other/GCP-CES-adapter-credentials-production-staging
+
+## Deploy the Service
+
+```bash
+# gcloud auth login
+# after changing login email:
+gcloud auth list
+gcloud config list
+gcloud config set account <email>
+gcloud auth application-default login
+gcloud config set project voicebot-503007
+gcloud auth application-default set-quota-project voicebot-503007
+
+Run the deployment script for production:
+bash script/deploy.sh
+
+or staging
+bash script/deploy_staging.sh
+```
+
+This command will build the container image from the source, push it to Artifact Registry, and deploy it to Cloud Run.
 
 ## Create ces-twilio-adapter service account and access secret
 
