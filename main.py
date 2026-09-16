@@ -50,7 +50,8 @@ from twilio_utils import validate_twilio_signature
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BASE_PHONE_NUMBER = os.getenv("BASE_PHONE_NUMBER", "+493042430003")
+# The dialed number is the first 4 digits of "To"; everything after is the call ID.
+PHONE_NUMBER_DIGITS = 4
 
 # Load environment variables from .env file
 load_dotenv()
@@ -198,11 +199,13 @@ async def handle_incoming_call(request: Request):
     logger.info(f"Incoming call form params: {dict(form_params)}")
 
     winterhotline_call_id = "-1"
-    suffix = to_number[len(BASE_PHONE_NUMBER):] if to_number.startswith(BASE_PHONE_NUMBER) else ""
-    if suffix.isdigit():
-        winterhotline_call_id = str(int(suffix))
-        to_number = BASE_PHONE_NUMBER
-        logger.info(f"Parsed winterhotlineCallId={winterhotline_call_id} from To number")
+    if to_number[PHONE_NUMBER_DIGITS:].isdigit():
+        winterhotline_call_id = str(int(to_number[PHONE_NUMBER_DIGITS:]))
+        to_number = to_number[:PHONE_NUMBER_DIGITS]
+        logger.info(
+            f"Parsed winterhotlineCallId={winterhotline_call_id}, "
+            f"routing on {to_number}"
+        )
     else:
         logger.info(f"No winterhotlineCallId in To number {to_number}, using default -1")
 

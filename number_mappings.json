@@ -1,5 +1,10 @@
 {
-  "+493042430003": {
+  "comment_+000": "phone +000 is staging voicebot",
+  "+000": {
+    "deployment_id": "projects/voicebot-503007/locations/eu/apps/6e587c9b-96f0-4452-a336-8bb7532044c8/deployments/7ffb25a7-571c-4d22-a0ef-370835b50de4"
+  },
+  "comment_+001": "phone +001 is production winterdienst voicebot",
+  "+001": {
     "deployment_id": "projects/voicebot-503007/locations/eu/apps/6e587c9b-96f0-4452-a336-8bb7532044c8/deployments/e43ec465-5d4a-40d2-85b2-c8c998b5f3b7"
   }
 }

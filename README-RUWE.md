@@ -1,3 +1,7 @@
+# General usage
+
+3CX can decide which bot the call will be connected to by providing a different 4 digit phonenumber. See number_mappings.json.
+
 # Credential files not checked in
 Find them on:
 
@@ -17,9 +21,6 @@ gcloud auth application-default set-quota-project voicebot-503007
 
 Run the deployment script for production:
 bash script/deploy.sh
-
-or staging
-bash script/deploy_staging.sh
 ```
 
 This command will build the container image from the source, push it to Artifact Registry, and deploy it to Cloud Run.
@@ -190,7 +191,9 @@ Because there's no SIP peering relationship, **custom SIP headers don't work her
 
 The channel that *does* survive plain forwarding: **the dialed number itself**. 3CX appends the ID to the base number, so the `To` field carries it.
 
-**Implemented (adapter side):** `handle_incoming_call` strips the `BASE_PHONE_NUMBER` prefix off `To` and treats the remaining digits as the ID, defaulting to `-1` when there's no numeric suffix. From there it's threaded through the same pipeline as `caller_number`: TwiML `<Parameter name="winterhotlineCallId">` → websocket `customParameters` → `realtimeInput.variables.winterhotlineCallId`.
+**Implemented (adapter side):** the convention is **first 4 digits = the telephone number, everything trailing = the winterhotlineCallId**. `handle_incoming_call` splits `To` at offset 4, routes the agent lookup on the leading 4 digits and uses the remainder as the ID (leading zeros stripped) — e.g. `000342` → ID `42`, agent lookup on `0003`. If there is no trailing numeric part the ID defaults to `-1` and the number is used unchanged. From there it's threaded through the same pipeline as `caller_number`: TwiML `<Parameter name="winterhotlineCallId">` → websocket `customParameters` → `realtimeInput.variables.winterhotlineCallId`.
+
+The agent lookup key in [`number_mappings.json`](number_mappings.json) must therefore be the **4-digit** number, not a full E.164 number.
 
 **Also needed (CX Agent Studio):** declare a `winterhotlineCallId` variable and reference `{winterhotlineCallId}` in the agent's Instructions.
 
