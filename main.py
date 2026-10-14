@@ -368,7 +368,20 @@ async def websocket_endpoint(websocket: WebSocket):
             nonlocal project_id
             nonlocal va_ws
             while True:
-                message = await websocket.receive_text()
+                try:
+                    message = await websocket.receive_text()
+                except WebSocketDisconnect as e:
+                    if e.code == 1000:
+                        logger.info(
+                            "Twilio WebSocket closed normally (code 1000). "
+                            "Ending forwarding."
+                        )
+                    else:
+                        logger.warning(
+                            f"Twilio WebSocket disconnected with code {e.code}: "
+                            f"{e.reason}"
+                        )
+                    break
                 data = json.loads(message)
                 event_type = data.get("event")
 
