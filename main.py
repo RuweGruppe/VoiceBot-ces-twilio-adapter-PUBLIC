@@ -147,10 +147,16 @@ def get_config_message(session_id: str, deployment_id: str | None = None) -> dic
             "inputAudioConfig": {
                 "audioEncoding": AGENT_AUDIO_ENCODING,
                 "sampleRateHertz": AGENT_AUDIO_SAMPLING_RATE,
+                "bargeInConfig": {
+                    "noBargeInDuration": "3s",
+                    "totalDuration": "15s",
+                },
+                "endOfSpeechSensitivity": "LOW",
             },
             "outputAudioConfig": {
                 "audioEncoding": AGENT_AUDIO_ENCODING,
                 "sampleRateHertz": AGENT_AUDIO_SAMPLING_RATE,
+                "volumeGainDb": -4.0,
             },
         }
     }
