@@ -50,8 +50,8 @@ from twilio_utils import validate_twilio_signature
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# The dialed number is the first 4 digits of "To"; everything after is the call ID.
-PHONE_NUMBER_DIGITS = 4
+# The dialed number starts with "+"; everything after is the winterhotlineCallId.
+PHONE_NUMBER_DIGITS = 1
 
 # Load environment variables from .env file
 load_dotenv()
