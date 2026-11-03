@@ -1,6 +1,15 @@
 # General usage
 
-3CX can decide which bot the call will be connected to by providing a different 4 digit phonenumber. See number_mappings.json.
+This adapter sits between Twilio and a GCP CES (Conversational Agents) agent.
+3CX forwards calls to a Twilio number with the `winterhotlineCallId` appended.
+The adapter extracts the ID from the dialed number (`+` prefix → everything after is the call ID) and passes it to the CES agent as a session variable.
+
+There are **two environments** — each deployed as a separate Cloud Run service:
+
+| Environment | Cloud Run Service | CES Agent App ID | Number Mappings |
+|---|---|---|---|
+| **Production** | `ces-twilio-adapter` | `6e587c9b-96f0-4452-a336-8bb7532044c8` | `number_mappings.prod.json` |
+| **Stage** | `ces-twilio-adapter-stage` | `520aef25-5041-4da0-b776-7b3da50dad59` | `number_mappings.stage.json` |
 
 # Credential files not checked in
 Find them on:
@@ -9,21 +18,40 @@ Find them on:
 
 ## Deploy the Service
 
+### Prerequisites
+
 ```bash
-# gcloud auth login
-# after changing login email:
-gcloud auth list
-gcloud config list
+gcloud auth login
 gcloud config set account <email>
 gcloud auth application-default login
 gcloud config set project voicebot-503007
-gcloud auth application-default set-quota-project voicebot-503007
-
-Run the deployment script for production:
-bash script/deploy.sh
+export TWILIO_ACCOUNT_SID="your-twilio-account-sid"
 ```
 
-This command will build the container image from the source, push it to Artifact Registry, and deploy it to Cloud Run.
+The Twilio Account SID is not stored in the repo (GitHub Push Protection).
+Find it in the Twilio Console under Settings → Account Settings.
+
+### Deploy
+
+```bash
+# Deploy to production:
+bash script/deploy.sh prod
+
+# Deploy to stage:
+bash script/deploy.sh stage
+```
+
+The deploy script:
+1. Reads the environment config from `script/values.{env}.sh`
+2. Copies `number_mappings.{env}.json` → `number_mappings.json`
+3. Builds the container image, pushes it to Artifact Registry, and deploys it to Cloud Run
+
+### What the environment configs contain
+
+- `script/values.prod.sh` / `script/values.stage.sh` — Service name, hostname, region, concurrency, etc.
+- `number_mappings.prod.json` / `number_mappings.stage.json` — Maps the `+` prefix to the correct CES agent deployment ID
+
+The `TWILIO_ACCOUNT_SID` env var must be set before running deploy — the script will error if it's missing.
 
 ## Create ces-twilio-adapter service account and access secret
 
@@ -97,7 +125,7 @@ gcloud config set project voicebot-503007
 
 # CES Twilio Adapter — Configuration Notes
 
-Companion notes for [`script/values.sh`](script/values.sh) (the deploy-time config sourced by `script/deploy.sh`). The comments that used to live inline in `values.sh` have been moved here to keep that file minimal.
+Companion notes for the deploy-time config files (`script/values.prod.sh` / `script/values.stage.sh`), sourced by `script/deploy.sh`.
 
 ## Where Twilio fits vs. where GCP fits
 
@@ -148,11 +176,11 @@ Choose **one** method (see the "Phone Number to Agent Mapping" section in [`READ
 1. **Firestore** (recommended for production): set `NUMBERS_COLLECTION_ID`, e.g. `ces-twilio-adapter-mappings`.
 2. **Local JSON file** (for development/testing): set `NUMBERS_CONFIG_FILE`, e.g. `number_mappings.json`.
 
-## `values.sh` vs. `.env`
+## `values.{env}.sh` vs. `.env`
 
 Two files, two tools, two lifecycles — keep them separate:
 
-- **`script/values.sh`** = deploy-time config sourced by `script/deploy.sh` → passed to `gcloud run deploy`. Holds infra settings (`PROJECT_ID`, `LOCATION`, `SERVICE_ACCOUNT`, …) plus which secrets to mount. The Python app never reads most of these.
+- **`script/values.prod.sh`** / **`script/values.stage.sh`** = deploy-time config sourced by `script/deploy.sh` → passed to `gcloud run deploy`. Holds infra settings (`PROJECT_ID`, `LOCATION`, `SERVICE_ACCOUNT`, …) plus which secrets to mount. The Python app never reads most of these. The `TWILIO_ACCOUNT_SID` is read from the environment (must be exported before running the deploy script).
 - **`.env`** = local runtime config loaded by `main.py` via `load_dotenv()` when you run `python main.py`. Holds the real `TWILIO_AUTH_TOKEN` for local testing (in prod that comes from Secret Manager instead).
 
 `PUBLIC_SERVER_HOSTNAME` deliberately **differs** between the two (your ngrok hostname locally vs. the `run.app` URL in prod), which is one reason not to merge them.
@@ -191,9 +219,9 @@ Because there's no SIP peering relationship, **custom SIP headers don't work her
 
 The channel that *does* survive plain forwarding: **the dialed number itself**. 3CX appends the ID to the base number, so the `To` field carries it.
 
-**Implemented (adapter side):** the convention is **first 4 digits = the telephone number, everything trailing = the winterhotlineCallId**. `handle_incoming_call` splits `To` at offset 4, routes the agent lookup on the leading 4 digits and uses the remainder as the ID (leading zeros stripped) — e.g. `000342` → ID `42`, agent lookup on `0003`. If there is no trailing numeric part the ID defaults to `-1` and the number is used unchanged. From there it's threaded through the same pipeline as `caller_number`: TwiML `<Parameter name="winterhotlineCallId">` → websocket `customParameters` → `realtimeInput.variables.winterhotlineCallId`.
+**Implemented (adapter side):** the convention is **first character (`+`) = the phone number prefix, everything trailing = the winterhotlineCallId** (controlled by `PHONE_NUMBER_DIGITS = 1` in `main.py`). `handle_incoming_call` splits `To` at offset 1, routes the agent lookup on the leading `+` and uses the remainder as the ID (leading zeros stripped) — e.g. `+0000500` → lookup key `+`, ID `500`. If there is no trailing numeric part the ID defaults to `-1` and the number is used unchanged. From there it's threaded through the same pipeline as `caller_number`: TwiML `<Parameter name="winterhotlineCallId">` → websocket `customParameters` → `realtimeInput.variables.winterhotlineCallId`.
 
-The agent lookup key in [`number_mappings.json`](number_mappings.json) must therefore be the **4-digit** number, not a full E.164 number.
+The agent lookup key in `number_mappings.{env}.json` must be `"+"`. Each environment has its own mapping file pointing to the correct CES agent deployment.
 
 **Also needed (CX Agent Studio):** declare a `winterhotlineCallId` variable and reference `{winterhotlineCallId}` in the agent's Instructions.
 
