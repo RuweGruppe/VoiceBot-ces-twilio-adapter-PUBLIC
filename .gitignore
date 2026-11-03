@@ -23,8 +23,11 @@ wheels/
 # Virtual environments
 .venv
 
-# file with deployment values
+# legacy values file (replaced by values.prod.sh / values.stage.sh)
 script/values.sh
+
+# generated at deploy time from number_mappings.{env}.json
+number_mappings.json
 
 # local environment file with secrets
 .env
