@@ -37,6 +37,8 @@ fi
 cp "$MAPPINGS_FILE" "$REPO_ROOT/number_mappings.json"
 echo "Deploying $ENV (service: $SERVICE_NAME) with number_mappings.${ENV}.json"
 
+BUILD_SERVICE_ACCOUNT="voicebot-cloudbuild@${PROJECT_ID}.iam.gserviceaccount.com"
+
 gcloud run deploy $SERVICE_NAME \
     --source="$REPO_ROOT" \
     --platform=managed \
@@ -46,6 +48,7 @@ gcloud run deploy $SERVICE_NAME \
     --min-instances=1 \
     --max-instances=10 \
     --service-account=$SERVICE_ACCOUNT \
+    --build-service-account=projects/$PROJECT_ID/serviceAccounts/$BUILD_SERVICE_ACCOUNT \
     --allow-unauthenticated \
     --project=$PROJECT_ID  \
     --timeout=$TIMEOUT \

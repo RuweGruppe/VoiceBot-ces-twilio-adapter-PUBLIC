@@ -1,0 +1,5 @@
+#!include:.gitignore
+
+# Override: number_mappings.json is generated at deploy time by deploy.sh
+# and must be uploaded to Cloud Build despite being in .gitignore
+!number_mappings.json
